@@ -1,0 +1,215 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root { color-scheme: light; }
+  html.dark { color-scheme: dark; }
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+  body {
+    /* App-wide type rhythm: default body weight is `medium` (500) which
+       reads as refined and professional with Inter at all sizes. Anything
+       that needs more emphasis opts in explicitly via `font-semibold`
+       (600) or `font-bold` (700) — never the default. */
+    @apply bg-white text-ink-800 antialiased font-medium;
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11', 'ss01';
+    letter-spacing: -0.005em;
+  }
+  html.dark body {
+    @apply bg-night-900 text-night-50;
+  }
+  /* Heading tags get a one-step bump over body so semantic structure
+     carries visual weight without the page feeling top-heavy. Override
+     with `font-bold` per-component for true headline moments like
+     stock names or page titles. */
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-semibold tracking-tight;
+  }
+  /* Native form controls inherit the body font, otherwise browsers fall
+     back to system fonts and the page suddenly mixes typefaces. */
+  input, textarea, select, button {
+    font-family: inherit;
+    font-weight: inherit;
+    letter-spacing: inherit;
+  }
+  * {
+    -webkit-tap-highlight-color: transparent;
+  }
+  /* Scrollbars hidden everywhere — content still scrolls */
+  ::-webkit-scrollbar {
+    width: 0;
+    height: 0;
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb,
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  * {
+    scrollbar-width: none; /* Firefox */
+    -ms-overflow-style: none; /* IE / old Edge */
+  }
+}
+
+@layer components {
+  /* ---------- Buttons ---------- */
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition
+           active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed
+           focus:outline-none focus-visible:shadow-focus;
+    min-height: 40px;
+  }
+  .btn-primary {
+    @apply btn bg-brand text-white hover:bg-brand-600;
+  }
+  .btn-pos {
+    @apply btn bg-pos text-white hover:opacity-90;
+  }
+  .btn-neg {
+    @apply btn bg-neg text-white hover:opacity-90;
+  }
+  .btn-ghost {
+    @apply btn bg-ink-50 text-ink-700 hover:bg-ink-100;
+  }
+  html.dark .btn-ghost {
+    @apply bg-night-600 text-night-50 hover:bg-night-500;
+  }
+  .btn-outline {
+    @apply btn border border-ink-200 text-ink-700 hover:bg-ink-50;
+  }
+  html.dark .btn-outline {
+    @apply border-night-400 text-night-50 hover:bg-night-600;
+  }
+  .btn-sm {
+    @apply px-3 py-1.5 text-xs rounded-lg;
+    min-height: 32px;
+  }
+
+  /* ---------- Cards ---------- */
+  .card {
+    @apply rounded-2xl bg-white border border-ink-100 shadow-card p-4;
+  }
+  html.dark .card {
+    @apply bg-night-700 border-night-500/40 shadow-none;
+  }
+  .card-flat {
+    @apply rounded-2xl bg-ink-50 p-4;
+  }
+  html.dark .card-flat {
+    @apply bg-night-700;
+  }
+
+  /* ---------- Inputs ---------- */
+  .input {
+    @apply w-full rounded-lg bg-white border border-ink-200 px-3.5 py-2 text-sm text-ink-800
+           placeholder-ink-400 transition
+           focus:outline-none focus:border-brand focus:shadow-focus;
+    min-height: 40px;
+  }
+  html.dark .input {
+    @apply bg-night-600 border-night-400 text-night-50 placeholder-night-200;
+  }
+  .label {
+    @apply block text-[11px] uppercase tracking-wider font-semibold text-ink-500 mb-1.5;
+  }
+  html.dark .label {
+    @apply text-night-200;
+  }
+
+  /* ---------- Tags / chips (professional: subtle radius, not pills) ---------- */
+  .tag {
+    @apply inline-flex items-center rounded-md px-2 py-0.5 text-[11px] font-semibold;
+  }
+  .tag-pos {
+    @apply tag bg-pos/10 text-pos;
+  }
+  .tag-neg {
+    @apply tag bg-neg/10 text-neg;
+  }
+  .tag-info {
+    @apply tag bg-brand/10 text-brand;
+  }
+  .tag-mute {
+    @apply tag bg-ink-100 text-ink-600;
+  }
+  html.dark .tag-mute {
+    @apply bg-night-500 text-night-100;
+  }
+
+  /* ---------- Tables ---------- */
+  .data-table {
+    @apply w-full text-sm;
+  }
+  .data-table thead th {
+    @apply text-left text-[11px] uppercase tracking-wider font-semibold text-ink-500 py-2 font-sans;
+  }
+  html.dark .data-table thead th {
+    @apply text-night-200;
+  }
+  .data-table tbody td {
+    @apply py-3 border-t border-ink-100;
+  }
+  html.dark .data-table tbody td {
+    @apply border-night-500/40;
+  }
+  .data-table tbody tr:hover {
+    @apply bg-ink-50/60;
+  }
+  html.dark .data-table tbody tr:hover {
+    @apply bg-night-600/40;
+  }
+
+  /* ---------- Section heading ---------- */
+  .section-title {
+    @apply text-xs uppercase tracking-wider font-semibold text-ink-500 mb-3;
+  }
+  html.dark .section-title {
+    @apply text-night-200;
+  }
+
+  /* ---------- Divider ---------- */
+  .divider {
+    @apply border-t border-ink-100;
+  }
+  html.dark .divider {
+    @apply border-night-500/40;
+  }
+
+  /* ---------- Money tone helpers ---------- */
+  .num {
+    font-variant-numeric: tabular-nums;
+    @apply font-medium;
+  }
+
+  /* ---------- Boot splash + loaders ---------- */
+  @keyframes barRise {
+    0%   { transform: scaleY(0.15); opacity: 0.5; }
+    50%  { transform: scaleY(1);    opacity: 1;   }
+    100% { transform: scaleY(0.4);  opacity: 0.7; }
+  }
+  .bar-rise {
+    transform-origin: bottom center;
+    animation: barRise 1.4s ease-in-out infinite;
+  }
+  @keyframes spinDash {
+    0%   { stroke-dasharray: 1, 200; stroke-dashoffset: 0; }
+    50%  { stroke-dasharray: 110, 200; stroke-dashoffset: -35; }
+    100% { stroke-dasharray: 110, 200; stroke-dashoffset: -124; }
+  }
+  .circle-loader-track  { stroke: currentColor; opacity: 0.15; }
+  .circle-loader-arc    { animation: spinDash 1.4s ease-in-out infinite; }
+  @keyframes brandPulse {
+    0%, 100% { transform: scale(1);    opacity: 1; }
+    50%      { transform: scale(1.04); opacity: 0.92; }
+  }
+  .brand-pulse { animation: brandPulse 2.4s ease-in-out infinite; }
+  @keyframes fadeOutScale {
+    from { opacity: 1; transform: scale(1); }
+    to   { opacity: 0; transform: scale(1.04); }
+  }
+  .splash-exit { animation: fadeOutScale 320ms ease-out forwards; }
+}

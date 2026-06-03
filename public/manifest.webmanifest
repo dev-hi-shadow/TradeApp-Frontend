@@ -1,0 +1,10 @@
+{
+  "name": "Tradar — Paper Trading",
+  "short_name": "Tradar",
+  "description": "Practice trading Indian markets with live data.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0a0d14",
+  "theme_color": "#0a0d14",
+  "orientation": "portrait"
+}
