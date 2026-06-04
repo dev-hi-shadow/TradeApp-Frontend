@@ -54,7 +54,7 @@ export function Login() {
                   value={emailOrUsername}
                   onChange={(e) => setIdent(e.target.value)}
                   autoComplete="username"
-                  placeholder="demo@example.com"
+                  placeholder="you@example.com"
                   required
                 />
               </div>
@@ -84,12 +84,6 @@ export function Login() {
             </form>
 
             <GoogleSignInButton onDone={() => navigate('/', { replace: true })} />
-
-            <div className="divider my-5" />
-            <div className="rounded-xl bg-brand/5 dark:bg-brand/10 px-3 py-2.5 text-xs text-ink-600 dark:text-night-100">
-              <span className="font-semibold text-accent">Demo:</span>{' '}
-              demo@example.com / demo123
-            </div>
           </div>
 
           <p className="text-sm text-ink-500 dark:text-night-200 mt-4 text-center">

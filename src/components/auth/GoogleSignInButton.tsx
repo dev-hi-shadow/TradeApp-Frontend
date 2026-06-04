@@ -75,13 +75,17 @@ export function GoogleSignInButton({ onDone }: { onDone?: () => void }) {
             }
           },
         });
+        // Match the app's design: full card width (GIS caps at 400px),
+        // rectangular like our rounded-lg buttons, dark-aware theme.
+        const width = Math.min(400, Math.max(200, elRef.current.offsetWidth || 352));
+        const dark = document.documentElement.classList.contains('dark');
         google.accounts.id.renderButton(elRef.current, {
-          theme: 'outline',
+          theme: dark ? 'filled_black' : 'outline',
           size: 'large',
-          width: 320,
+          width,
           text: 'continue_with',
-          shape: 'pill',
-          logo_alignment: 'center',
+          shape: 'rectangular',
+          logo_alignment: 'left',
         });
       })
       .catch(() => {});
@@ -95,11 +99,11 @@ export function GoogleSignInButton({ onDone }: { onDone?: () => void }) {
   return (
     <>
       <div className="divider my-5 relative">
-        <span className="absolute left-1/2 -translate-x-1/2 -top-2.5 px-2 bg-white dark:bg-night-800 text-[11px] uppercase tracking-wide text-ink-400 dark:text-night-300">
+        <span className="absolute left-1/2 -translate-x-1/2 -top-2.5 px-2 bg-white dark:bg-night-700 text-[11px] uppercase tracking-wide text-ink-400 dark:text-night-300">
           or
         </span>
       </div>
-      <div className="flex justify-center" ref={elRef} />
+      <div className="w-full [&>div]:!w-full flex justify-center" ref={elRef} />
     </>
   );
 }

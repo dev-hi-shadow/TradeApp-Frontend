@@ -94,11 +94,7 @@ export function Sidebar() {
         </Link>
         <div className="flex items-center gap-2">
           <ThemeToggle />
-          <button
-            onClick={logout}
-            className="btn-sm flex-1 bg-ink-100 dark:bg-night-600 text-ink-700 dark:text-night-50
-                       hover:bg-ink-200 dark:hover:bg-night-500"
-          >
+          <button onClick={logout} className="btn-ghost btn-sm flex-1">
             <IconLogOut size={14} /> Sign out
           </button>
         </div>
