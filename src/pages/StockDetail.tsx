@@ -12,12 +12,8 @@ import {
 import { getTodaySessionRange, marketFor, useMarket } from '../context/MarketContext';
 import { useMarketStatus } from '../hooks/useMarketStatus';
 import { useTheme } from '../context/ThemeContext';
-import {
-  fetchHistory,
-  type Period,
-  type Snapshot,
-} from '../api/market';
-import { useSnapshotQuery } from '../api/queries';
+import { type Period } from '../api/market';
+import { useSnapshotQuery, useHistoryQuery } from '../api/queries';
 import { OrderModal } from '../components/OrderModal';
 import { StockOverview } from '../components/StockOverview';
 import { TerminalChart } from '../components/TerminalChart';
@@ -30,7 +26,7 @@ import {
   IconLink,
   IconList,
 } from '../components/icons';
-import { classPnL, fmtINR, fmtNum, fmtPct } from '../utils/fmt';
+import { classPnL, fmtNum, fmtPct } from '../utils/fmt';
 import { pushRecentlyViewed } from '../utils/recentlyViewed';
 import type { Candle } from '../types';
 
@@ -125,12 +121,28 @@ export function StockDetail() {
 
   const [period, setPeriod] = useState<Period>('1D');
   const [chartType, setChartType] = useState<ChartType>('line');
-  const [candles, setCandles] = useState<Candle[]>([]);
-  const [loading, setLoading] = useState(false);
   const [tab, setTab] = useState<'overview' | 'fo'>('overview');
   const [hoverOHLC, setHoverOHLC] = useState<Candle | null>(null);
   const [hoverPos, setHoverPos] = useState<{ x: number; y: number } | null>(null);
   const { data: snap = null } = useSnapshotQuery(symbol);
+
+  // Candle history via TanStack Query — cached per (symbol, period), so
+  // revisits and period flips paint instantly from cache (background refresh
+  // keeps 1D growing). keepPreviousData means the old line stays on screen
+  // while the next range loads: no blank/loading flash.
+  // Fallback: if 1D comes back empty (market closed + contract had no ticks
+  // today), pull 1W so the chart always has SOMETHING to render.
+  const histQ = useHistoryQuery(symbol, period);
+  const need1W = period === '1D' && !histQ.isPending && (histQ.data?.length ?? 0) === 0;
+  const fallbackQ = useHistoryQuery(symbol, '1W', { enabled: need1W });
+  const candles: Candle[] = useMemo(() => {
+    const main = histQ.data ?? [];
+    if (main.length > 0) return main;
+    return need1W ? (fallbackQ.data ?? []) : main;
+  }, [histQ.data, fallbackQ.data, need1W]);
+  // Spinner ONLY on the very first ever load of this (symbol, period) — once
+  // cached (or while previous data is shown) there's nothing to wait for.
+  const loading = histQ.isPending && candles.length === 0;
   const [modalOpen, setModalOpen] = useState(false);
   const [modalSide, setModalSide] = useState<'buy' | 'sell'>('buy');
   const [terminalOpen, setTerminalOpen] = useState(false);
@@ -388,59 +400,51 @@ export function StockDetail() {
         title: '',
       });
     }
-    // Only refit if the candles array actually changed (period switch or first load).
-    // For 1D we force the visible range to span the *full session* plus a
-    // 15-min trailing buffer (next day's pre-open settle window) — this is
-    // exactly what our data (real candles + whitespace) covers, and it sidesteps
-    // a race where `fitContent()` sometimes leaves ~25% empty space on the right
-    // because lightweight-charts hasn't finished sizing yet on first mount.
-    if (prevCandlesRef.current !== candles) {
-      prevCandlesRef.current = candles;
-      const chart = chartRef.current;
-      if (chart && candles.length) {
-        const ts = chart.timeScale();
-        let usedExplicit = false;
+    // ── View enforcement ────────────────────────────────────────────────
+    // For 1D, the view must span the FULL session (open → close + a 15-min
+    // trail) — exactly what our data (real candles + whitespace) covers; for
+    // longer periods, fit everything. The chart is HOVER-ONLY (pan/zoom
+    // disabled), so enforcing this deterministic view repeatedly can never
+    // fight the user.
+    //
+    // Why enforcement instead of a one-shot: with TanStack-cached candles a
+    // revisit renders synchronously while the lazy page's container still has
+    // ZERO width — any setVisibleRange issued then dies silently, and when
+    // lightweight-charts' autoSize finally measures the box it falls back to
+    // fitting the data → the line stretched full-width and an OPEN market
+    // looked closed. Our own ResizeObserver fires exactly when the container
+    // gains real size, so the correct range is (re)applied at the right time.
+    prevCandlesRef.current = candles;
+    const applyView = () => {
+      const c = chartRef.current;
+      if (!c || !candles.length) return;
+      const el = containerRef.current;
+      if (!el || el.clientWidth < 10) return; // not laid out yet — observer will re-fire
+      const ts = c.timeScale();
+      try {
         if (period === '1D' && sessionEnd) {
-          try {
-            const { from } = getTodaySessionRange(marketFor(symbol));
-            ts.setVisibleRange({
-              from: from as any,
-              to: (sessionEnd + SESSION_TRAIL_SEC) as any,
-            });
-            usedExplicit = true;
-          } catch {
-            /* fall through to fitContent */
-          }
+          const { from } = getTodaySessionRange(marketFor(symbol));
+          ts.setVisibleRange({ from: from as any, to: (sessionEnd + SESSION_TRAIL_SEC) as any });
+        } else {
+          ts.fitContent();
         }
-        if (!usedExplicit) ts.fitContent();
-      }
+      } catch { /* chart mid-teardown */ }
+    };
+    applyView();
+    const rafId = requestAnimationFrame(() => requestAnimationFrame(applyView));
+    const timeoutId = window.setTimeout(applyView, 350);
+    let ro: ResizeObserver | null = null;
+    if (containerRef.current) {
+      ro = new ResizeObserver(() => applyView());
+      ro.observe(containerRef.current);
     }
+    return () => {
+      cancelAnimationFrame(rafId);
+      clearTimeout(timeoutId);
+      ro?.disconnect();
+    };
   }, [chartType, candles, palette, snap?.change, snap?.close, period, symbol]);
 
-  // Load history when symbol/period changes.
-  // Fallback: if a 1D request comes back empty (market closed + contract had
-  // no ticks today), try 1W so the chart always has SOMETHING to render.
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    (async () => {
-      try {
-        const r = await fetchHistory(symbol, period);
-        if (cancelled) return;
-        if (r.candles.length === 0 && period === '1D') {
-          const r2 = await fetchHistory(symbol, '1W');
-          if (!cancelled) setCandles(r2.candles);
-        } else {
-          setCandles(r.candles);
-        }
-      } catch {
-        /* silent — keep previous candles */
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [symbol, period]);
 
   // Live price overlay on last candle
   const live = quotes[symbol];
@@ -553,16 +557,12 @@ export function StockDetail() {
     };
   }, [chartType, snap?.change, live?.change, period, candles]);
 
-  // Stats shown — hover wins, else live snap
-  const stats = hoverOHLC || (snap ? {
-    time: 0,
-    open: snap.open,
-    high: snap.high,
-    low:  snap.low,
-    close: live?.price ?? snap.price,
-    volume: snap.volume ?? 0,
-  } : null);
-
+  const hasQuote = !!(live || snap);
+  // The very first WS tick after subscribe can carry change=0 before the
+  // snapshot (with previousClose) lands — during that window the change is
+  // simply UNKNOWN, not zero. Gate the change span separately from the price.
+  const changeKnown =
+    !!snap || (!!live && (live.change !== 0 || live.changePercent !== 0));
   const price = live?.price ?? snap?.price ?? 0;
   // Day-change is what the live ticker / snapshot give us — correct for 1D.
   // For any longer period (1W/1M/3M/6M/1Y/3Y/5Y/ALL) compute the change
@@ -570,6 +570,14 @@ export function StockDetail() {
   // what the chart is visually showing.
   let change = live?.change ?? snap?.change ?? 0;
   let changePct = live?.changePercent ?? snap?.changePercent ?? 0;
+  // Some snapshots (esp. outside market hours / before the first WS tick)
+  // report change=0 even though price and previousClose are valid — derive
+  // the real day-change instead of flashing "+0.00 (+0.00%)".
+  const prevClose = snap?.previousClose ?? 0;
+  if (change === 0 && prevClose > 0 && price > 0 && price !== prevClose) {
+    change = price - prevClose;
+    changePct = (change / prevClose) * 100;
+  }
   if (period !== '1D' && candles.length > 0) {
     const periodOpen = candles[0].close;
     if (periodOpen > 0) {
@@ -621,11 +629,22 @@ export function StockDetail() {
         </div>
 
         <div className="flex items-baseline gap-3 mt-3">
-          <span className="num text-2xl sm:text-3xl font-bold tracking-tight">{fmtNum(price)}</span>
-          <span className={`num text-sm font-semibold flex items-center gap-1 ${classPnL(change)}`}>
-            {up ? <IconArrowUp size={14} /> : <IconArrowDown size={14} />}
-            {up ? '+' : ''}{fmtNum(change)} ({fmtPct(changePct)})
-          </span>
+          {hasQuote ? (
+            <span className="num text-2xl sm:text-3xl font-bold tracking-tight">{fmtNum(price)}</span>
+          ) : (
+            // No quote at all yet — shimmer the price slot.
+            <span className="h-8 w-32 rounded-lg bg-ink-100/80 dark:bg-night-600 animate-pulse" />
+          )}
+          {hasQuote && changeKnown ? (
+            <span className={`num text-sm font-semibold flex items-center gap-1 ${classPnL(change)}`}>
+              {up ? <IconArrowUp size={14} /> : <IconArrowDown size={14} />}
+              {up ? '+' : ''}{fmtNum(change)} ({fmtPct(changePct)})
+            </span>
+          ) : (
+            // Change not derivable yet (first WS tick precedes the snapshot) —
+            // shimmer instead of a misleading "+0.00 (+0.00%)".
+            <span className="h-4 w-24 rounded bg-ink-100/80 dark:bg-night-600 animate-pulse" />
+          )}
           <span className="text-[11px] text-ink-400 dark:text-night-200 ml-auto">{period}</span>
         </div>
       </div>
@@ -674,7 +693,7 @@ export function StockDetail() {
             <button
               key={p}
               onClick={() => setPeriod(p)}
-              className={`shrink-0 px-3 py-1.5 px-1 rounded-full text-xs font-semibold transition ${
+              className={`shrink-0 px-3 py-1.5 rounded-full text-xs font-semibold transition ${
                 period === p
                   ? 'bg-ink-800 text-white dark:bg-night-50 dark:text-night-800'
                   : 'text-ink-500 dark:text-night-200 hover:bg-ink-50 dark:hover:bg-night-600'

@@ -19,6 +19,17 @@ export function fetchCandles(symbol: string, interval: Interval) {
   );
 }
 
+/**
+ * One-shot REST quotes (same shape the WS broadcasts). Used to SEED the live
+ * quote map on app load / page subscribe so cards show a real change% right
+ * away instead of "+0.00" while the socket warms up.
+ */
+export function fetchQuotesRest(symbols: string[]) {
+  return api<{ quotes: import('../types').Quote[] }>(
+    `/api/market/quote?symbols=${encodeURIComponent(symbols.join(','))}`
+  );
+}
+
 export function searchSymbols(q: string) {
   return api<{ results: { symbol: string; name: string; exchange?: string }[] }>(
     `/api/market/search?q=${encodeURIComponent(q)}`

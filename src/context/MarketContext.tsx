@@ -5,6 +5,7 @@ import { useToast } from './ToastContext';
 import type { OrderDTO, PortfolioSummary, Quote } from '../types';
 import { invalidateTradeData, invalidate, QueryKey } from '../queryClient';
 import { getWatchlist } from '../api/account';
+import { fetchQuotesRest } from '../api/market';
 import { exitPosition as restExitPosition, exitAllPositions as restExitAll, type ExitResult } from '../api/orders';
 import { ensurePushSubscription } from '../utils/push';
 import throttle from 'lodash/throttle';
@@ -223,6 +224,49 @@ export function MarketProvider({ children }: { children: React.ReactNode }) {
       .catch(() => {});
   }, [token]);
 
+  // ── REST quote seeding ─────────────────────────────────────────────────
+  // The WS needs connect → auth → subscribe → next price-loop tick before the
+  // first quotes land, so cards showed "+0.00 (+0.00%)" for several seconds.
+  // Seed each symbol ONCE per session from the REST /quote endpoint, merged
+  // ADDITIVELY: a symbol that already has (or concurrently receives) a live
+  // WS quote is never overwritten — the socket remains the source of truth.
+  const seededRef = useRef<Set<string>>(new Set());
+  const seedQuotes = useCallback((symbols: string[]) => {
+    const need = symbols
+      .map((s) => s.toUpperCase().trim())
+      .filter((s) => s && !seededRef.current.has(s));
+    if (!need.length) return;
+    need.forEach((s) => seededRef.current.add(s));
+    fetchQuotesRest(need)
+      .then((r) => {
+        const incoming = r.quotes || [];
+        if (!incoming.length) return;
+        setQuotes((cur) => {
+          let changed = false;
+          const next = { ...cur };
+          for (const q of incoming) {
+            const key = q.displaySymbol?.toUpperCase?.();
+            if (key && !next[key]) {
+              next[key] = q;
+              changed = true;
+            }
+          }
+          return changed ? next : cur;
+        });
+      })
+      .catch(() => {}); // seed is best-effort; the WS fills in regardless
+  }, []);
+
+  // Seed indices + watchlist as soon as we're authenticated (doesn't wait for
+  // the socket — REST is usually faster than connect+auth+subscribe+tick).
+  useEffect(() => {
+    if (!token) {
+      seededRef.current.clear();
+      return;
+    }
+    seedQuotes([...INDICES, ...watchlist, ...pageSubsRef.current]);
+  }, [token, watchlist, seedQuotes]);
+
   // Reset subscription bookkeeping whenever the WS is NOT open. The server
   // forgets our subscriptions on disconnect, so the next time it comes back
   // up we need to re-subscribe everything — the easiest way to make the
@@ -388,6 +432,11 @@ export function MarketProvider({ children }: { children: React.ReactNode }) {
         .filter(Boolean)
         .forEach((s) => pageSubsRef.current.add(s));
 
+      // Instant first paint for page-level symbols (detail pages, F&O lists):
+      // REST-seed anything we've never quoted, while the WS subscription
+      // below brings the live stream up behind it.
+      seedQuotes(symbols);
+
       const newOnes = symbols
         .map((s) => s.toUpperCase().trim())
         .filter((s) => s && !subscribedRef.current.has(s));
@@ -395,7 +444,7 @@ export function MarketProvider({ children }: { children: React.ReactNode }) {
       newOnes.forEach((s) => subscribedRef.current.add(s));
       ws.send({ type: 'subscribe', symbols: newOnes });
     },
-    [ws]
+    [ws, seedQuotes]
   );
 
   const unsubscribe = useCallback(

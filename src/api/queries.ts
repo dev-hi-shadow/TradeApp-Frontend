@@ -8,8 +8,8 @@
  *
  * Live market data is NOT here — it stays on the WebSocket via MarketContext.
  */
-import { useQuery } from '@tanstack/react-query';
-import { qk } from '../queryClient';
+import { useQuery, keepPreviousData } from '@tanstack/react-query';
+import { qk, queryClient } from '../queryClient';
 import {
   listOrders,
   listOrdersByDate,
@@ -141,15 +141,41 @@ export function useSnapshotQuery(symbol: string) {
     queryFn: () => fetchSnapshot(symbol),
     select: (r) => r.snapshot,
     enabled: !!symbol,
+    // Revisits paint INSTANTLY from cache, then refresh in the background
+    // once the data is older than 30s. (Live price/change still stream in
+    // over the WS ticker on top of this.)
+    staleTime: 30_000,
+    placeholderData: keepPreviousData,
   });
 }
 
-export function useHistoryQuery(symbol: string, period: Period) {
+export function useHistoryQuery(symbol: string, period: Period, opts?: { enabled?: boolean }) {
+  const intraday = period === '1D';
   return useQuery({
     queryKey: qk.history(symbol, period),
-    queryFn: () => fetchHistory(symbol, period),
+    queryFn: async () => {
+      const r = await fetchHistory(symbol, period);
+      // A background refetch can come back EMPTY during an upstream
+      // rate-limit window. Never let that wipe good cached candles — the
+      // chart would flip to the 1W fallback dataset under a "1D" label.
+      // (A genuinely-empty FIRST load still flows through, so the
+      // 1D-empty → 1W fallback keeps working for fresh symbols.)
+      if (!r.candles.length) {
+        const prev = queryClient.getQueryData<typeof r>(qk.history(symbol, period));
+        if (prev?.candles?.length) return prev;
+      }
+      return r;
+    },
     select: (r) => r.candles,
-    enabled: !!symbol,
+    enabled: (opts?.enabled ?? true) && !!symbol,
+    // 1D grows new bars through the session → keep it fresh-ish and poll
+    // lightly while mounted. Longer ranges are effectively immutable history,
+    // so cache them for the whole session (instant period flips/revisits).
+    staleTime: intraday ? 60_000 : Infinity,
+    refetchInterval: intraday ? 120_000 : false,
+    // Keep showing the previous chart while the next period/symbol loads —
+    // no blank flash, the new line just replaces the old when ready.
+    placeholderData: keepPreviousData,
   });
 }
 
