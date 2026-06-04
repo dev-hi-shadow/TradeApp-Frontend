@@ -1,31 +1,39 @@
-import { useEffect, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { useAuth } from './context/AuthContext';
+// Eager: the first screens a user ever sees (tiny, no chart libs).
 import { Login } from './pages/Login';
 import { Register } from './pages/Register';
-import { ForgotPassword } from './pages/ForgotPassword';
-import { ResetPassword } from './pages/ResetPassword';
-import { VerifyEmail } from './pages/VerifyEmail';
 import { Stocks } from './pages/Stocks';
-import { Trade } from './pages/Trade';
-import { Plans } from './pages/Plans';
-import { Profile } from './pages/Profile';
-import { StockDetail } from './pages/StockDetail';
-import { OptionChain } from './pages/OptionChain';
-import { StrategyBuilder } from './pages/StrategyBuilder';
-import { FnO } from './pages/FnO';
-import { Admin } from './pages/Admin';
-import { AlertsPage } from './pages/Alerts';
-import { Commodities } from './pages/Commodities';
-import { Analytics } from './pages/Analytics';
-import { Discover } from './pages/Discover';
-import { Watchlists } from './pages/Watchlists';
 import { BottomNav } from './components/BottomNav';
 import { TopBar } from './components/TopBar';
 import { Sidebar } from './components/Sidebar';
 import { DesktopHeader } from './components/DesktopHeader';
 import { SearchModal } from './components/SearchModal';
 import { Spinner } from './components/Spinner';
+import { PageSkeleton } from './components/PageSkeleton';
+import { lazyPage } from './utils/lazyPage';
+
+// Lazy: everything else loads on demand, so the first paint ships a fraction
+// of the old single bundle (lightweight-charts alone was ~⅓ of it). Each page
+// becomes its own content-hashed chunk; lazyPage auto-recovers when a stale
+// tab requests chunks from a previous deploy.
+const ForgotPassword  = lazyPage(() => import('./pages/ForgotPassword'), 'ForgotPassword');
+const ResetPassword   = lazyPage(() => import('./pages/ResetPassword'), 'ResetPassword');
+const VerifyEmail     = lazyPage(() => import('./pages/VerifyEmail'), 'VerifyEmail');
+const Trade           = lazyPage(() => import('./pages/Trade'), 'Trade');
+const Plans           = lazyPage(() => import('./pages/Plans'), 'Plans');
+const Profile         = lazyPage(() => import('./pages/Profile'), 'Profile');
+const StockDetail     = lazyPage(() => import('./pages/StockDetail'), 'StockDetail');
+const OptionChain     = lazyPage(() => import('./pages/OptionChain'), 'OptionChain');
+const StrategyBuilder = lazyPage(() => import('./pages/StrategyBuilder'), 'StrategyBuilder');
+const FnO             = lazyPage(() => import('./pages/FnO'), 'FnO');
+const Admin           = lazyPage(() => import('./pages/Admin'), 'Admin');
+const AlertsPage      = lazyPage(() => import('./pages/Alerts'), 'AlertsPage');
+const Commodities     = lazyPage(() => import('./pages/Commodities'), 'Commodities');
+const Analytics       = lazyPage(() => import('./pages/Analytics'), 'Analytics');
+const Discover        = lazyPage(() => import('./pages/Discover'), 'Discover');
+const Watchlists      = lazyPage(() => import('./pages/Watchlists'), 'Watchlists');
 
 const TITLES: Record<string, string> = {
   '/': 'Stocks',
@@ -97,7 +105,9 @@ function Shell({ children }: { children: React.ReactNode }) {
         <TopBar title={title} onSearch={openSearch} />
         <DesktopHeader title={title} onSearch={openSearch} />
         <main className="flex-1 w-full max-w-6xl mx-auto px-0 sm:px-4 lg:px-8 pt-3 lg:pt-6 pb-24 lg:pb-12">
-          {children}
+          {/* Lazy page chunks resolve inside the shell, so the sidebar/header
+              stay solid and only the content area shimmers. */}
+          <Suspense fallback={<PageSkeleton />}>{children}</Suspense>
         </main>
       </div>
       <BottomNav />
@@ -106,8 +116,18 @@ function Shell({ children }: { children: React.ReactNode }) {
   );
 }
 
+/** Full-screen fallback for lazy pages that live OUTSIDE the Shell. */
+function FullScreenLoader() {
+  return (
+    <div className="h-screen flex items-center justify-center bg-ink-50 dark:bg-night-900 text-accent">
+      <Spinner size={28} thickness={3.5} />
+    </div>
+  );
+}
+
 export default function App() {
   return (
+    <Suspense fallback={<FullScreenLoader />}>
     <Routes>
       <Route path="/login"           element={<Login />} />
       <Route path="/register"        element={<Register />} />
@@ -130,5 +150,6 @@ export default function App() {
       <Route path="/alerts"          element={<ProtectedRoute><Shell><AlertsPage /></Shell></ProtectedRoute>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
+    </Suspense>
   );
 }
