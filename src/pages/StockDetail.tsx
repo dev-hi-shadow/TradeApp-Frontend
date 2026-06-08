@@ -151,6 +151,10 @@ export function StockDetail() {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<any> | null>(null);
+  // Current line/area colour sign (true = green/up). Tracked so the live
+  // overlay can flip the whole 1D line red↔green in realtime when the price
+  // crosses yesterday's close, without rebuilding the series every tick.
+  const lineUpRef = useRef<boolean>(true);
   // Time of the synthetic session-close marker (15:30 NSE / 23:30 MCX), only
   // present when the session is already over. The live-overlay effect uses
   // this to keep the marker's value in sync with the live price so hovering
@@ -341,12 +345,29 @@ export function StockDetail() {
     sessionEndMarkerRef.current = sessionEnded ? sessionEnd : null;
 
     if (chartType === 'candle') {
+      const prevClose = (snap?.close && snap.close > 0) ? snap.close : (quotes[symbol]?.previousClose ?? 0);
       seriesRef.current = chart.addCandlestickSeries({
         upColor: POS, downColor: NEG,
         borderUpColor: POS, borderDownColor: NEG,
         wickUpColor: POS, wickDownColor: NEG,
         priceLineVisible: false,
         lastValueVisible: false,
+        // Keep yesterday's close in view on big gap opens (see line branch).
+        ...(period === '1D' && prevClose > 0
+          ? {
+              autoscaleInfoProvider: (orig: () => any) => {
+                const r = orig();
+                if (!r?.priceRange) return r;
+                return {
+                  ...r,
+                  priceRange: {
+                    minValue: Math.min(r.priceRange.minValue, prevClose),
+                    maxValue: Math.max(r.priceRange.maxValue, prevClose),
+                  },
+                };
+              },
+            }
+          : {}),
       });
       const data: any[] = candles.map<CandlestickData>((c) => ({
         time: c.time as any, open: c.open, high: c.high, low: c.low, close: c.close,
@@ -357,24 +378,55 @@ export function StockDetail() {
       }
       seriesRef.current.setData(data);
     } else {
-      // Line tone tracks the *period* change so the 6M / 1Y / ALL chart goes
-      // red when the period is down — independent of today's day-change.
+      // Colour: on 1D the line is green when price ≥ yesterday's close, red
+      // when below (the live overlay flips this in realtime). On longer ranges
+      // it tracks the change vs the first candle of the loaded window.
       const livePrice = quotes[symbol]?.price ?? snap?.price ?? 0;
-      const periodChange =
-        period !== '1D' && candles.length > 0 && candles[0].close > 0
-          ? livePrice - candles[0].close
-          : (snap?.change ?? 0);
-      const lineColor = periodChange >= 0 ? POS : NEG;
+      // prevClose: prefer the live quote (always present) over snap.close
+      // (often 0 when the snapshot is throttled).
+      const prevClose = (snap?.close && snap.close > 0)
+        ? snap.close
+        : (quotes[symbol]?.previousClose ?? 0);
+      let up: boolean;
+      if (period === '1D') {
+        const ch = quotes[symbol]?.change ?? snap?.change;
+        up = ch != null && ch !== 0
+          ? ch >= 0
+          : (prevClose > 0 && livePrice > 0 ? livePrice >= prevClose : (ch ?? 0) >= 0);
+      } else {
+        const periodChange =
+          candles.length > 0 && candles[0].close > 0 ? livePrice - candles[0].close : (snap?.change ?? 0);
+        up = periodChange >= 0;
+      }
+      lineUpRef.current = up;
       seriesRef.current = chart.addAreaSeries({
-        lineColor,
-        topColor: periodChange >= 0 ? 'rgba(0,179,134,0.20)' : 'rgba(235,91,60,0.20)',
-        bottomColor: periodChange >= 0 ? 'rgba(0,179,134,0.00)' : 'rgba(235,91,60,0.00)',
+        lineColor: up ? POS : NEG,
+        topColor: up ? 'rgba(0,179,134,0.20)' : 'rgba(235,91,60,0.20)',
+        bottomColor: up ? 'rgba(0,179,134,0.00)' : 'rgba(235,91,60,0.00)',
         lineWidth: 2,
         priceLineVisible: false,
         lastValueVisible: false,
         // We render our own dot (matching the end-of-line dot exactly) so
         // both the persistent endpoint dot and the hover dot look identical.
         crosshairMarkerVisible: false,
+        // Keep yesterday's-close in the visible price range even on a big
+        // gap-up/down open, so the dashed reference line never falls
+        // off-screen (the cause of the "sometimes no prev-close line").
+        ...(period === '1D' && prevClose > 0
+          ? {
+              autoscaleInfoProvider: (orig: () => any) => {
+                const r = orig();
+                if (!r?.priceRange) return r;
+                return {
+                  ...r,
+                  priceRange: {
+                    minValue: Math.min(r.priceRange.minValue, prevClose),
+                    maxValue: Math.max(r.priceRange.maxValue, prevClose),
+                  },
+                };
+              },
+            }
+          : {}),
       });
       const data: any[] = candles.map<LineData>((c) => ({
         time: c.time as any, value: c.close,
@@ -390,9 +442,10 @@ export function StockDetail() {
     // on the 1D chart; for longer ranges the value would be off-screen or
     // visually noisy. Lightweight-charts cleans this up automatically when
     // the series is removed at the top of the next effect run.
-    if (period === '1D' && snap?.close && snap.close > 0 && seriesRef.current) {
+    const prevCloseLine = (snap?.close && snap.close > 0) ? snap.close : (quotes[symbol]?.previousClose ?? 0);
+    if (period === '1D' && prevCloseLine > 0 && seriesRef.current) {
       seriesRef.current.createPriceLine({
-        price: snap.close,
+        price: prevCloseLine,
         color: theme === 'dark' ? 'rgba(255,255,255,0.75)' : 'rgba(40,40,40,0.55)',
         lineStyle: LineStyle.Dashed,
         lineWidth: 1,
@@ -443,7 +496,11 @@ export function StockDetail() {
       clearTimeout(timeoutId);
       ro?.disconnect();
     };
-  }, [chartType, candles, palette, snap?.change, snap?.close, period, symbol]);
+    // `quotes[symbol]?.previousClose` is in deps so the dashed prev-close line +
+    // autoscale appear once the live quote's prevClose is known (snap.close is
+    // often 0 when the snapshot is throttled). It's stable through the day, so
+    // this triggers at most one extra rebuild.
+  }, [chartType, candles, palette, snap?.change, snap?.close, quotes[symbol]?.previousClose, period, symbol]);
 
 
   // Live price overlay on last candle
@@ -508,11 +565,18 @@ export function StockDetail() {
         const x = ts.timeToCoordinate(baseLast.time as any);
         const y = (series as any).priceToCoordinate?.(lastClose);
         if (typeof x === 'number' && typeof y === 'number') {
-          const periodChange =
-            period !== '1D' && candles.length > 0 && candles[0].close > 0
-              ? lastClose - candles[0].close
-              : (snap?.change ?? live?.change ?? 0);
-          setEndDot({ x, y, color: periodChange >= 0 ? POS : NEG });
+          let up: boolean;
+          if (period === '1D') {
+            const pc = snap?.close ?? 0;
+            up = pc > 0 ? lastClose >= pc : (snap?.change ?? live?.change ?? 0) >= 0;
+          } else {
+            const periodChange =
+              candles.length > 0 && candles[0].close > 0
+                ? lastClose - candles[0].close
+                : (snap?.change ?? live?.change ?? 0);
+            up = periodChange >= 0;
+          }
+          setEndDot({ x, y, color: up ? POS : NEG });
         } else {
           setEndDot(null);
         }
@@ -522,6 +586,37 @@ export function StockDetail() {
     });
     return () => cancelAnimationFrame(raf);
   }, [live, candles, chartType, snap?.change, period, palette]);
+
+  // Realtime 1D line colour: green when the live price is at/above yesterday's
+  // close, red when below — recoloured the instant it crosses. Its own effect
+  // (not gated on a WS tick) so the colour is correct regardless of whether
+  // the snapshot or the live quote arrived first.
+  useEffect(() => {
+    const series = seriesRef.current;
+    if (!series || chartType !== 'line' || period !== '1D') return;
+    // Use the live quote's day-change first (it's reliably present — same
+    // source the header uses); fall back to price-vs-prevClose. This avoids
+    // depending on snap.close, which is often 0 when the snapshot is throttled.
+    const ch = live?.change ?? snap?.change;
+    let up: boolean;
+    if (ch != null && ch !== 0) {
+      up = ch >= 0;
+    } else {
+      const pc = live?.previousClose || snap?.close || 0;
+      const px = live?.price ?? snap?.price ?? 0;
+      if (pc <= 0 || px <= 0) return; // nothing to decide on yet
+      up = px >= pc;
+    }
+    if (up === lineUpRef.current) return;
+    lineUpRef.current = up;
+    try {
+      series.applyOptions({
+        lineColor: up ? POS : NEG,
+        topColor: up ? 'rgba(0,179,134,0.20)' : 'rgba(235,91,60,0.20)',
+        bottomColor: up ? 'rgba(0,179,134,0.00)' : 'rgba(235,91,60,0.00)',
+      });
+    } catch { /* series mid-teardown */ }
+  }, [live?.change, live?.price, live?.previousClose, snap?.change, snap?.close, snap?.price, chartType, period, symbol, candles]);
 
   // Reposition the pulsing end-of-line dot whenever the chart container
   // resizes (lightweight-charts re-lays out internally, but our React
@@ -541,11 +636,17 @@ export function StockDetail() {
           const x = chart.timeScale().timeToCoordinate(last.time as any);
           const y = (series as any).priceToCoordinate?.(last.close);
           if (typeof x === 'number' && typeof y === 'number') {
-            const c =
-              period !== '1D' && candles.length > 0 && candles[0].close > 0
+            let up: boolean;
+            if (period === '1D') {
+              const pc = snap?.close ?? 0;
+              up = pc > 0 ? last.close >= pc : (snap?.change ?? live?.change ?? 0) >= 0;
+            } else {
+              const c = candles.length > 0 && candles[0].close > 0
                 ? last.close - candles[0].close
                 : (snap?.change ?? live?.change ?? 0);
-            setEndDot({ x, y, color: c >= 0 ? POS : NEG });
+              up = c >= 0;
+            }
+            setEndDot({ x, y, color: up ? POS : NEG });
           }
         } catch {}
       });
