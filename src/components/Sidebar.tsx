@@ -8,7 +8,7 @@ import {
 } from './icons';
 
 const NAV = [
-  { to: '/',            label: 'Stocks',      Icon: IconHome,  end: true },
+  { to: '/stocks',      label: 'Stocks',      Icon: IconHome,  end: true },
   { to: '/watchlists',  label: 'Watchlists',  Icon: IconBookmark },
   { to: '/discover',    label: 'Discover',    Icon: IconCompass },
   { to: '/fno',         label: 'F&O',         Icon: IconChart },
@@ -41,7 +41,7 @@ export function Sidebar() {
                  bg-white dark:bg-night-800 border-r border-ink-100 dark:border-night-500/40"
     >
       {/* Brand */}
-      <Link to="/" className="flex items-center gap-2.5 px-5 h-16 shrink-0 hover:opacity-90 transition">
+      <Link to="/stocks" className="flex items-center gap-2.5 px-5 h-16 shrink-0 hover:opacity-90 transition">
         <span className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-brand text-white font-bold text-sm">
           T
         </span>

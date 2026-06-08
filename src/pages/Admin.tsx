@@ -16,7 +16,7 @@ import { IconRefresh } from '../components/icons';
 
 export function Admin() {
   const { user } = useAuth();
-  if (user && user.role !== 'admin') return <Navigate to="/" replace />;
+  if (user && user.role !== 'admin') return <Navigate to="/stocks" replace />;
 
   const toast = useToast();
   const [q, setQ] = useState('');

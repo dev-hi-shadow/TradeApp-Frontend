@@ -3,7 +3,7 @@ import { IconAnalytics, IconChart, IconHome, IconList, IconTrade, IconUser } fro
 
 // "Plans" tab hidden per user request — page + route still exist, just not navigable.
 const TABS = [
-  { to: '/',            label: 'Stocks',    Icon: IconHome },
+  { to: '/stocks',      label: 'Stocks',    Icon: IconHome },
   { to: '/fno',         label: 'F&O',       Icon: IconChart },
   { to: '/commodities', label: 'MCX',       Icon: IconTrade }, // commodity explorer
   { to: '/trade',       label: 'Trade',     Icon: IconList },

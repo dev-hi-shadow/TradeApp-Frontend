@@ -18,6 +18,9 @@ import { lazyPage } from './utils/lazyPage';
 // of the old single bundle (lightweight-charts alone was ~⅓ of it). Each page
 // becomes its own content-hashed chunk; lazyPage auto-recovers when a stale
 // tab requests chunks from a previous deploy.
+const Landing         = lazyPage(() => import('./pages/Landing'), 'Landing');
+const Features        = lazyPage(() => import('./pages/Features'), 'Features');
+const Pricing         = lazyPage(() => import('./pages/Pricing'), 'Pricing');
 const ForgotPassword  = lazyPage(() => import('./pages/ForgotPassword'), 'ForgotPassword');
 const ResetPassword   = lazyPage(() => import('./pages/ResetPassword'), 'ResetPassword');
 const VerifyEmail     = lazyPage(() => import('./pages/VerifyEmail'), 'VerifyEmail');
@@ -36,7 +39,7 @@ const Discover        = lazyPage(() => import('./pages/Discover'), 'Discover');
 const Watchlists      = lazyPage(() => import('./pages/Watchlists'), 'Watchlists');
 
 const TITLES: Record<string, string> = {
-  '/': 'Stocks',
+  '/stocks': 'Stocks',
   '/fno': 'F&O',
   '/strategy': 'Strategy',
   '/commodities': 'Commodities',
@@ -62,6 +65,23 @@ function ProtectedRoute({ children }: { children: JSX.Element }) {
   }
   if (!user) return <Navigate to="/login" replace />;
   return children;
+}
+
+/**
+ * `/` is the public marketing Landing page. Authenticated users never see it —
+ * they're redirected to the app home (`/stocks`).
+ */
+function LandingGate() {
+  const { user, loading } = useAuth();
+  if (loading) {
+    return (
+      <div className="h-screen flex items-center justify-center bg-ink-50 dark:bg-night-900 text-accent">
+        <Spinner size={28} thickness={3.5} />
+      </div>
+    );
+  }
+  if (user) return <Navigate to="/stocks" replace />;
+  return <Landing />;
 }
 
 function titleFor(pathname: string): string | undefined {
@@ -129,12 +149,16 @@ export default function App() {
   return (
     <Suspense fallback={<FullScreenLoader />}>
     <Routes>
+      <Route path="/landing"         element={<Landing />} />
+      <Route path="/features"        element={<Features />} />
+      <Route path="/pricing"         element={<Pricing />} />
       <Route path="/login"           element={<Login />} />
       <Route path="/register"        element={<Register />} />
       <Route path="/forgot-password" element={<ForgotPassword />} />
       <Route path="/reset-password"  element={<ResetPassword />} />
       <Route path="/verify-email"    element={<VerifyEmail />} />
-      <Route path="/"          element={<ProtectedRoute><Shell><Stocks /></Shell></ProtectedRoute>} />
+      <Route path="/"          element={<LandingGate />} />
+      <Route path="/stocks"    element={<ProtectedRoute><Shell><Stocks /></Shell></ProtectedRoute>} />
       <Route path="/fno"         element={<ProtectedRoute><Shell><FnO /></Shell></ProtectedRoute>} />
       <Route path="/strategy"    element={<ProtectedRoute><Shell><StrategyBuilder /></Shell></ProtectedRoute>} />
       <Route path="/commodities" element={<ProtectedRoute><Shell><Commodities /></Shell></ProtectedRoute>} />

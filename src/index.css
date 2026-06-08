@@ -185,6 +185,81 @@
     @apply font-medium;
   }
 
+  /* Landing-page device-frame swap. */
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(6px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  /* Landing — scrolling price ticker. */
+  @keyframes tickerScroll {
+    from { transform: translateX(0); }
+    to   { transform: translateX(-50%); }
+  }
+  .ticker-track { animation: tickerScroll 36s linear infinite; }
+  .ticker-track:hover { animation-play-state: paused; }
+
+  /* Landing — gently breathing decorative candlesticks. */
+  @keyframes candleBreathe {
+    0%, 100% { transform: scaleY(0.82); }
+    50%      { transform: scaleY(1.08); }
+  }
+  .candle-body { transform-origin: center; animation: candleBreathe 3.2s ease-in-out infinite; }
+
+  /* Landing — "red → green" candle CTA: a losing trade turning to profit. */
+  .candle-btn {
+    background: #eb5b3c;
+    transition: background-color .5s ease, box-shadow .5s ease, transform .15s ease;
+    box-shadow: 0 10px 30px -8px rgba(235,91,60,0.6);
+  }
+  .candle-btn:hover {
+    background: #00b386;
+    box-shadow: 0 10px 30px -8px rgba(0,179,134,0.7);
+  }
+  .candle-btn:active { transform: scale(0.98); }
+  /* The candle glyph inside flips its wick/colour on hover. */
+  .candle-glyph { transition: transform .5s ease; }
+  .candle-btn:hover .candle-glyph { transform: translateY(-2px) rotate(180deg); }
+
+  /* Landing — scroll-into-view reveals. Directional, staggerable. */
+  .reveal {
+    opacity: 0;
+    transition: opacity .7s cubic-bezier(.2,.7,.2,1), transform .7s cubic-bezier(.2,.7,.2,1), filter .7s ease;
+    will-change: opacity, transform;
+  }
+  .reveal-up    { transform: translateY(32px); }
+  .reveal-down  { transform: translateY(-28px); }
+  .reveal-left  { transform: translateX(-48px); }
+  .reveal-right { transform: translateX(48px); }
+  .reveal-scale { transform: scale(.9); filter: blur(6px); }
+  .reveal.in-view { opacity: 1; transform: none; filter: none; }
+
+  /* Landing — floaty drift for accent visuals. */
+  @keyframes drift {
+    0%, 100% { transform: translateY(0) rotate(var(--rot, 0deg)); }
+    50%      { transform: translateY(-12px) rotate(var(--rot, 0deg)); }
+  }
+  .float-slow { animation: drift 6s ease-in-out infinite; }
+
+  /* Landing — gradient text shimmer. */
+  @keyframes shimmer { to { background-position: 200% center; } }
+  .shimmer-text {
+    background: linear-gradient(90deg, #00b386, #5367ff, #00b386);
+    background-size: 200% auto;
+    -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent; color: transparent;
+    animation: shimmer 4s linear infinite;
+  }
+
+  /* Landing — image tilt that straightens on hover. */
+  .tilt { transition: transform .5s cubic-bezier(.2,.7,.2,1); }
+  .group:hover .tilt { transform: rotate(0) translateY(-4px) scale(1.01) !important; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .reveal { opacity: 1 !important; transform: none !important; filter: none !important; }
+    .float-slow, .shimmer-text, .candle-body, .ticker-track { animation: none !important; }
+  }
+
   /* ---------- Boot splash + loaders ---------- */
   @keyframes barRise {
     0%   { transform: scaleY(0.15); opacity: 0.5; }

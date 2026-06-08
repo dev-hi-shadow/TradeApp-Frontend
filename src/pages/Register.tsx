@@ -20,7 +20,7 @@ export function Register() {
     try {
       await register(username, email, password);
       toast.push({ kind: 'success', message: 'Account created — welcome!' });
-      navigate('/', { replace: true });
+      navigate('/stocks', { replace: true });
     } catch (err: any) {
       toast.push({ kind: 'error', title: 'Registration failed', message: err.message });
     } finally {
@@ -85,7 +85,7 @@ export function Register() {
               </button>
             </form>
 
-            <GoogleSignInButton onDone={() => navigate('/', { replace: true })} />
+            <GoogleSignInButton onDone={() => navigate('/stocks', { replace: true })} />
           </div>
 
           <p className="text-sm text-ink-500 dark:text-night-200 mt-4 text-center">

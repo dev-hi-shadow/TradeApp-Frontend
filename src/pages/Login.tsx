@@ -18,7 +18,7 @@ export function Login() {
     setSubmitting(true);
     try {
       await login(emailOrUsername, password);
-      navigate('/', { replace: true });
+      navigate('/stocks', { replace: true });
     } catch (err: any) {
       toast.push({ kind: 'error', title: 'Login failed', message: err.message });
     } finally {
@@ -83,7 +83,7 @@ export function Login() {
               </button>
             </form>
 
-            <GoogleSignInButton onDone={() => navigate('/', { replace: true })} />
+            <GoogleSignInButton onDone={() => navigate('/stocks', { replace: true })} />
           </div>
 
           <p className="text-sm text-ink-500 dark:text-night-200 mt-4 text-center">

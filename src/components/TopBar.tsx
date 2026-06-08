@@ -17,7 +17,7 @@ export function TopBar({ title, onSearch }: { title?: string; onSearch: () => vo
                        border-b border-ink-100 dark:border-night-500/40">
       <div className="px-4 h-14 flex items-center gap-3 max-w-5xl mx-auto">
         <Link
-          to="/"
+          to="/stocks"
           className="flex items-center gap-2 hover:opacity-90 transition"
           aria-label="Go to dashboard"
         >

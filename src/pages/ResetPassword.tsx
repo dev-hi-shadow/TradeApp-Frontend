@@ -28,7 +28,7 @@ export function ResetPassword() {
       const res = await resetPassword(token, password);
       applyAuth(res.token, res.user, res.refreshToken); // server signs us in after a successful reset
       toast.push({ kind: 'success', message: 'Password updated — you are signed in.' });
-      navigate('/', { replace: true });
+      navigate('/stocks', { replace: true });
     } catch (err: any) {
       toast.push({ kind: 'error', title: 'Reset failed', message: err.message });
     } finally {
