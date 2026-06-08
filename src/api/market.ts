@@ -95,6 +95,10 @@ export interface OptionChainResp {
   spot: number;
   lotSize?: string | null;
   rows: OptionRow[];
+  /** Backend served the last-good chain because the live build came back unpriced. */
+  stale?: boolean;
+  /** Backend served a short-lived cached chain (burst collapse). */
+  fromCache?: boolean;
 }
 
 export function fetchOptionChain(symbol: string, opts?: { expiry?: string; radius?: number }) {

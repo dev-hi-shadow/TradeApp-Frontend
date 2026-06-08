@@ -26,3 +26,8 @@ build/
 coverage/
 .nyc_output/
 screenshots/
+
+# Playwright
+e2e/.auth/
+test-results/
+playwright-report/

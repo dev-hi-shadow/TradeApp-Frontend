@@ -16,7 +16,6 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { useToast } from '../context/ToastContext';
 import { useMarket } from '../context/MarketContext';
 import {
   fetchOptionChain,
@@ -33,12 +32,12 @@ export function OptionChain() {
   const { symbol = '' } = useParams<{ symbol: string }>();
   const sym = symbol.toUpperCase();
   const navigate = useNavigate();
-  const toast = useToast();
   const { subscribe, quotes } = useMarket();
 
   const [data, setData] = useState<OptionChainResp | null>(null);
   const [expiry, setExpiry] = useState<string>('');
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [expiryPickerOpen, setExpiryPickerOpen] = useState(false);
   const [lotsMode, setLotsMode] = useState(false);
   const [greeksMode, setGreeksMode] = useState(false);
@@ -69,12 +68,16 @@ export function OptionChain() {
     try {
       const r = await fetchOptionChain(sym, { expiry: useExpiry, radius: radius ?? strikeRadius });
       setData(r);
+      setError(null);
       // Only adopt the server's default expiry on the FIRST load (when we
       // haven't yet remembered the user's choice). Otherwise leave the
       // selected expiry alone — the chain may otherwise reset after a tick.
       if (!useExpiry && !expiryRef.current) setExpiry(r.expiry);
     } catch (err: any) {
-      toast.push({ kind: 'error', title: 'Option chain failed', message: err.message });
+      // Record the failure so the body can show a clear inline state. We do
+      // NOT toast here — refresh() runs on a 5s poll, so a toast would spam
+      // once every cycle during any outage. The inline panel communicates it.
+      setError(err?.message || 'Could not load the option chain');
     } finally {
       setLoading(false);
     }
@@ -162,6 +165,22 @@ export function OptionChain() {
   }, [data]);
 
   const lotSize = data?.lotSize ? parseInt(String(data.lotSize), 10) : 1;
+
+  // Degraded-state detection. The chain is "live" only when at least one leg
+  // carries a real (>0) premium. Angel rate-limit / unconfigured / empty-slice
+  // responses come back with every leg at 0 (or no rows at all) — in those
+  // cases we show a clear "unavailable" panel instead of a wall of ₹0.00 or
+  // silently-blank rows.
+  const pricedLegs = useMemo(() => {
+    if (!data) return 0;
+    let n = 0;
+    for (const r of data.rows) {
+      if ((r.ce?.ltp ?? 0) > 0) n++;
+      if ((r.pe?.ltp ?? 0) > 0) n++;
+    }
+    return n;
+  }, [data]);
+  const chainUnavailable = !!data && pricedLegs === 0;
 
   // ── Chain analytics (OI-based) + time-to-expiry for greeks ──
   const analytics = useMemo(() => computeChainAnalytics(data?.rows ?? []), [data]);
@@ -309,12 +328,43 @@ export function OptionChain() {
           the spot strip as an absolute element that slides as spot ticks
           (no row gets pushed around when the strip moves between strikes). */}
       <div ref={containerRef} className="flex-1 overflow-y-auto pb-24 relative">
-        {!data ? (
+        {!data && loading ? (
           <div className="px-4 py-10 text-center text-sm text-ink-500 dark:text-night-200">
-            {loading ? 'Loading option chain…' : 'No data'}
+            Loading option chain…
           </div>
+        ) : !data ? (
+          // First load never produced a chain (endpoint error / Angel not
+          // configured / no spot). Clear, retryable state — not a blank screen.
+          <ChainUnavailable
+            title="Live option data unavailable"
+            detail={error || 'We couldn’t load the option chain right now.'}
+            onRetry={() => refresh(expiryRef.current || undefined)}
+          />
+        ) : chainUnavailable ? (
+          // Chain shape arrived but every leg is unpriced (Angel throttled /
+          // market data down). Show the reason instead of a wall of ₹0.00.
+          <ChainUnavailable
+            title="Live option prices unavailable"
+            detail={
+              error
+                ? error
+                : 'The exchange feed isn’t returning option prices right now. This usually clears in a few seconds — retrying automatically.'
+            }
+            onRetry={() => refresh(expiryRef.current || undefined)}
+          />
         ) : (
           <div className="relative">
+            {/* Stale badge — backend is serving the last good chain because the
+                latest live build came back unpriced. Prices may be a few
+                seconds old; the poll keeps trying. */}
+            {(data.stale || error) && (
+              <div
+                data-testid="oc-stale"
+                className="mx-4 my-2 rounded-lg bg-amber-500/10 border border-amber-500/30 px-3 py-1.5 text-[11px] text-amber-700 dark:text-amber-300 text-center"
+              >
+                Showing last available prices — live feed reconnecting…
+              </div>
+            )}
             {data.rows.map((row) => (
               <ChainRow
                 key={row.strike}
@@ -367,6 +417,30 @@ export function OptionChain() {
 // without measuring the DOM on every tick.
 const ROW_HEIGHT = 58;
 
+/* ---------- Degraded / unavailable state ---------- */
+function ChainUnavailable({
+  title, detail, onRetry,
+}: { title: string; detail: string; onRetry: () => void }) {
+  return (
+    <div
+      data-testid="oc-unavailable"
+      className="px-6 py-12 flex flex-col items-center text-center"
+    >
+      <div className="w-12 h-12 rounded-2xl bg-ink-100 dark:bg-night-700 flex items-center justify-center text-2xl mb-3">
+        📉
+      </div>
+      <div className="font-bold tracking-tight text-ink-800 dark:text-night-50">{title}</div>
+      <p className="text-sm text-ink-500 dark:text-night-200 mt-1.5 max-w-xs">{detail}</p>
+      <button
+        onClick={onRetry}
+        className="mt-4 px-4 h-9 rounded-lg text-sm font-bold bg-brand text-white hover:bg-brand-600 transition-colors"
+      >
+        Retry
+      </button>
+    </div>
+  );
+}
+
 /* ---------- One strike row ---------- */
 function ChainRow({
   row, isATM, atmRef, maxVol, lotSize, greeksMode, spot, tYears, onTap,
@@ -399,6 +473,7 @@ function ChainRow({
   return (
     <div
       ref={atmRef || undefined}
+      data-testid="oc-row"
       className="grid grid-cols-3 px-4 items-center"
       style={{ height: ROW_HEIGHT }}
     >
@@ -408,7 +483,7 @@ function ChainRow({
         disabled={!row.ce}
         className="text-left disabled:opacity-30"
       >
-        <div className="num text-sm font-medium tracking-tight text-ink-800 dark:text-night-50">
+        <div data-testid="oc-ce-premium" className="num text-sm font-medium tracking-tight text-ink-800 dark:text-night-50">
           {row.ce ? `₹${fmtNum(cePrice)}` : '—'}
         </div>
         {greeksMode ? (
@@ -436,7 +511,7 @@ function ChainRow({
         disabled={!row.pe}
         className="text-right disabled:opacity-30"
       >
-        <div className="num text-sm font-medium tracking-tight text-ink-800 dark:text-night-50">
+        <div data-testid="oc-pe-premium" className="num text-sm font-medium tracking-tight text-ink-800 dark:text-night-50">
           {row.pe ? `₹${fmtNum(pePrice)}` : '—'}
         </div>
         {greeksMode ? (
